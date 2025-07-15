@@ -1,6 +1,6 @@
 ---
 title: "Diseño Factorial con Simulación"
-author: "Estudiante Asistido por IA"
+author: "Nicolás Sánchez Aliaga"
 date: "2025-07-15"
 output: html_document
 ---

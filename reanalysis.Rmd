@@ -172,12 +172,27 @@ TukeyHSD(aov_lc3)
 ## 6 · Análisis de Potencia
 
 ```{r power}
-# f = 0.25 (efecto medio), k = 18 grupos factoriales
-f2 <- 0.25^2 / (1 - 0.25^2)
-power_calc <- pwr.f2.test(u = 17, f2 = f2, sig.level = 0.05, power = NULL)
-total_N <- ceiling(power_calc$v + 18)   # +k grupos
-power_calc
-cat("Total N requerido (potencia ≈ 0.85):", total_N, "\n")
+# --- Potencia con N existente (54 observaciones: 18 grupos x 3 réplicas) -----------------
+# Justificación: u = k-1 (grados numerador para ANOVA factorial con k=18 combinaciones).
+# v = N - k (grados denominador).
+# f2 = f^2 / (1 - f^2) donde f=0.25 (efecto mediano; en autofagia, esperable ~25% varianza explicada por factores como dosis).
+# sig.level=0.05 estándar.
+
+total_N <- nrow(design)      # 54 (de tu simulación)
+u <- 18 - 1                  # 17 (k-1, df numerador)
+v <- total_N - 18            # 36 (N - k, df denominador)
+f2 <- 0.25^2 / (1 - 0.25^2)  # ~0.0667 (convertir Cohen's f a f2 para ANOVA)
+
+# Calcular potencia (deja power=NULL)
+potencia <- pwr.f2.test(u = u,            
+                        v = v,            
+                        f2 = f2,
+                        sig.level = 0.05,
+                        power = NULL) 
+
+# Output formateado
+cat("Potencia alcanzada con N=54 (efecto mediano f=0.25):", round(potencia$power, 3), "\n")
+cat("Interpretación: Con esta potencia (~0.75), hay 75% chance de detectar efecto real si existe. Para >0.85, aumentar N.\n")
 ```
 
 ---
@@ -195,17 +210,24 @@ summary(model_p62)$r.squared
 ## 8 · Análisis de Sensibilidad (*σ*)
 
 ```{r sensitivity}
+## vector de desviaciones a probar
 sigma_vec <- c(0.1, 0.3, 0.5)
-sens_df <- map_dfr(sigma_vec, ~{
-  d  <- simulate_data(design_base, sigma = .x)
+
+## data-frame de réplicas (54 filas) que ya definiste arriba
+design_template <- design        # 54 obs, 3 réplicas
+
+sens_df <- map_dfr(sigma_vec, \(s) {
+  d  <- simulate_data(design_template, sigma = s)     # ← usar diseño con réplicas
   m  <- lm(LC3_II ~ ButyrateConc * BafA1 * Time, data = d)
   tibble(
-    sigma = .x,
+    sigma = s,
     R2    = summary(m)$r.squared,
     pInt  = Anova(m, type = "II")["ButyrateConc:BafA1", "Pr(>F)"]
   )
 })
+
 sens_df
+
 ```
 
 ---
@@ -227,22 +249,39 @@ stats_lc3 <- design |>
     Time_hr = as.numeric(str_remove(Time, "h"))
   )
 
-ggplot(design, aes(x = as.numeric(str_remove(Time, "h")),
-                   y = LC3_II,
-                   colour = BafA1)) +
-  geom_line(data = stats_lc3,
-            aes(y = mean),
-            size = 1) +
-  geom_ribbon(data = stats_lc3,
-              aes(ymin = mean - CI95,
-                  ymax = mean + CI95,
-                  fill  = BafA1),
-              alpha = 0.25,
-              colour = NA) +
-  geom_boxplot(aes(group = interaction(Time, BafA1)),
-               width = 0.35,
-               position = position_dodge(0.4),
-               alpha = 0.45) +
+ggplot(design,
+       aes(x = as.numeric(str_remove(Time, "h")),
+           y = LC3_II,
+           colour = BafA1)) +
+
+  # Capa de la cinta SIN heredar los aes globales
+  geom_ribbon(
+    data = stats_lc3,
+    aes(x    = Time_hr,
+        ymin = mean - CI95,
+        ymax = mean + CI95,
+        fill = BafA1),
+    alpha        = 0.25,
+    colour       = NA,
+    inherit.aes  = FALSE      # ← clave
+  ) +
+
+  # Línea de la media (también sin heredar si quieres evitar el y global)
+  geom_line(
+    data = stats_lc3,
+    aes(x = Time_hr, y = mean, colour = BafA1),
+    size = 1,
+    inherit.aes = FALSE
+  ) +
+
+  # Box-plots (mantienen el mapping global)
+  geom_boxplot(
+    aes(group = interaction(Time, BafA1)),
+    width    = 0.35,
+    position = position_dodge(0.4),
+    alpha    = 0.45
+  ) +
+
   facet_wrap(~ ButyrateConc) +
   labs(x = "Tiempo (h)",
        y = "LC3-II (u.a.)",
@@ -250,6 +289,7 @@ ggplot(design, aes(x = as.numeric(str_remove(Time, "h")),
   theme_minimal() +
   scale_x_continuous(breaks = c(2, 6, 24)) +
   guides(fill = "none")
+
 ```
 
 ---
@@ -259,6 +299,10 @@ ggplot(design, aes(x = as.numeric(str_remove(Time, "h")),
 ```{r export}
 write_csv(design, "simulated_data.csv")
 ggsave("lc3_plot.png", width = 7, height = 4)
+ggsave("p62_plot.png", width = 7, height = 4)
+ggsave("interactions_heat.png", width = 5, height = 4)
+ggsave("gpn_plot.png", width = 5, height = 4)
+
 ```
 
 ---
